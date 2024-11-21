@@ -25,7 +25,7 @@ public static partial class NopPluginDefaults
     /// <summary>
     /// Gets the path to plugins folder
     /// </summary>
-    public static string Path => "~/Plugins";
+    public static string PluginsPath => "~/Plugins";
 
     /// <summary>
     /// Gets the path to plugins folder
@@ -35,7 +35,7 @@ public static partial class NopPluginDefaults
     /// <summary>
     /// Gets the plugins folder name
     /// </summary>
-    public static string PathName => "Plugins";
+    public static string PluginPathName => "Plugins";
 
     /// <summary>
     /// Gets the path to plugins refs folder
@@ -71,6 +71,11 @@ public static partial class NopPluginDefaults
     /// Gets the path to themes folder
     /// </summary>
     public static string ThemesPath => "~/Themes";
+
+    /// <summary>
+    /// Gets the themes folder name
+    /// </summary>
+    public static string ThemesPathName => "Themes";
 
     /// <summary>
     /// Gets the name of the theme description file

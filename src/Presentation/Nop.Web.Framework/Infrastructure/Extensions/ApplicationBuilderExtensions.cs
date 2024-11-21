@@ -11,6 +11,7 @@ using Microsoft.AspNetCore.Localization;
 using Microsoft.AspNetCore.StaticFiles;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Primitives;
 using Microsoft.Net.Http.Headers;
 using Nop.Core;
 using Nop.Core.Configuration;
@@ -35,7 +36,6 @@ using Nop.Web.Framework.Mvc.Routing;
 using Nop.Web.Framework.WebOptimizer;
 using QuestPDF.Drawing;
 using WebMarkupMin.AspNetCore8;
-using WebOptimizer;
 using IPNetwork = Microsoft.AspNetCore.HttpOverrides.IPNetwork;
 
 namespace Nop.Web.Framework.Infrastructure.Extensions;
@@ -219,6 +219,16 @@ public static class ApplicationBuilderExtensions
     }
 
     /// <summary>
+    /// Configure static file serving
+    /// </summary>
+    /// <param name="application">Builder for configuring an application's request pipeline</param>
+    public static void UseNopWebRootFileProvider(this IApplicationBuilder application)
+    {
+        var webHostEnvironment = EngineContext.Current.Resolve<IWebHostEnvironment>();
+        webHostEnvironment.WebRootFileProvider = new NopWebRootFileProvider(webHostEnvironment.WebRootFileProvider);
+    }
+
+    /// <summary>
     /// Adds WebOptimizer to the <see cref="IApplicationBuilder"/> request execution pipeline
     /// </summary>
     /// <param name="application">Builder for configuring an application's request pipeline</param>
@@ -230,22 +240,7 @@ public static class ApplicationBuilderExtensions
         if (!woConfig.EnableCssBundling && !woConfig.EnableJavaScriptBundling)
             return;
 
-        var fileProvider = EngineContext.Current.Resolve<INopFileProvider>();
-        var webHostEnvironment = EngineContext.Current.Resolve<IWebHostEnvironment>();
-
-        application.UseWebOptimizer(webHostEnvironment,
-        [
-            new FileProviderOptions
-            {
-                RequestPath = new PathString("/Plugins"),
-                FileProvider = new PhysicalFileProvider(fileProvider.MapPath(@"Plugins"))
-            },
-            new FileProviderOptions
-            {
-                RequestPath = new PathString("/Themes"),
-                FileProvider = new PhysicalFileProvider(fileProvider.MapPath(@"Themes"))
-            }
-        ]);
+        application.UseWebOptimizer();
     }
 
     /// <summary>
@@ -282,42 +277,7 @@ public static class ApplicationBuilderExtensions
 
         //common static files
         application.UseStaticFiles(new StaticFileOptions { OnPrepareResponse = staticFileResponse });
-
-        //themes static files
-        application.UseStaticFiles(new StaticFileOptions
-        {
-            FileProvider = new PhysicalFileProvider(fileProvider.MapPath(@"Themes")),
-            RequestPath = new PathString("/Themes"),
-            OnPrepareResponse = staticFileResponse
-        });
-
-        //plugins static files
-        var staticFileOptions = new StaticFileOptions
-        {
-            FileProvider = new PhysicalFileProvider(fileProvider.MapPath(@"Plugins")),
-            RequestPath = new PathString("/Plugins"),
-            OnPrepareResponse = staticFileResponse
-        };
-
-        //exclude files in blacklist
-        if (!string.IsNullOrEmpty(appSettings.Get<CommonConfig>().PluginStaticFileExtensionsBlacklist))
-        {
-            var fileExtensionContentTypeProvider = new FileExtensionContentTypeProvider();
-
-            foreach (var ext in appSettings.Get<CommonConfig>().PluginStaticFileExtensionsBlacklist
-                         .Split(';', ',')
-                         .Select(e => e.Trim().ToLowerInvariant())
-                         .Select(e => $"{(e.StartsWith(".") ? string.Empty : ".")}{e}")
-                         .Where(fileExtensionContentTypeProvider.Mappings.ContainsKey))
-            {
-                fileExtensionContentTypeProvider.Mappings.Remove(ext);
-            }
-
-            staticFileOptions.ContentTypeProvider = fileExtensionContentTypeProvider;
-        }
-
-        application.UseStaticFiles(staticFileOptions);
-
+        
         //add support for backups
         var provider = new FileExtensionContentTypeProvider
         {
@@ -547,4 +507,140 @@ public static class ApplicationBuilderExtensions
 
         application.UseWebMarkupMin();
     }
+
+    #region Neestead class
+
+    private class NopWebRootFileProvider : IFileProvider
+    {
+        private readonly IFileProvider _webRootFileProvider;
+        private readonly IDictionary<PathString, IFileProvider> _additionalFileProviders;
+
+        public NopWebRootFileProvider(IFileProvider webRootFileProvider)
+        {
+            _webRootFileProvider = webRootFileProvider ?? throw new ArgumentNullException(nameof(webRootFileProvider));
+            var appSettings = EngineContext.Current.Resolve<AppSettings>();
+            var fileProvider = EngineContext.Current.Resolve<INopFileProvider>();
+
+            _additionalFileProviders = new Dictionary<PathString, IFileProvider>
+            {
+               [new PathString($"/{NopPluginDefaults.PluginPathName}")] = new NopPluginFileProvider(appSettings.Get<CommonConfig>(), fileProvider),
+               [new PathString($"/{NopPluginDefaults.ThemesPathName}")] = new PhysicalFileProvider(fileProvider.MapPath(NopPluginDefaults.ThemesPathName))
+            };
+        }
+        
+        private IFileProvider GetFileProvider(string path, out string outPath)
+        {
+            outPath = path;
+
+            if (!_additionalFileProviders.Any())
+                return _webRootFileProvider;
+
+            foreach (var additionalPathString in _additionalFileProviders.Keys)
+            {
+                if (additionalPathString == null || string.IsNullOrEmpty(additionalPathString.Value))
+                    continue;
+
+                if (!path.StartsWith(additionalPathString, StringComparison.InvariantCultureIgnoreCase))
+                    continue;
+
+                var pathString = additionalPathString.Value;
+
+                outPath = path.Substring(pathString.Length, path.Length - pathString.Length);
+
+                return _additionalFileProviders[additionalPathString];
+            }
+
+            return _webRootFileProvider;
+        }
+        
+        /// <summary>Enumerate a directory at the given path, if any.</summary>
+        /// <param name="subPath">Relative path that identifies the directory.</param>
+        /// <returns>Returns the contents of the directory.</returns>
+        public IDirectoryContents GetDirectoryContents(string subPath)
+        {
+            return GetFileProvider(subPath, out var outPath).GetDirectoryContents(outPath);
+        }
+
+        /// <summary>Locate a file at the given path.</summary>
+        /// <param name="subPath">Relative path that identifies the file.</param>
+        /// <returns>The file information. Caller must check Exists property.</returns>
+        public IFileInfo GetFileInfo(string subPath)
+        {
+            return GetFileProvider(subPath, out var outPath).GetFileInfo(outPath);
+        }
+
+        /// <summary>
+        /// Creates a <see cref="T:Microsoft.Extensions.Primitives.IChangeToken" /> for the specified <paramref name="filter" />.
+        /// </summary>
+        /// <param name="filter">Filter string used to determine what files or folders to monitor. Example: **/*.cs, *.*, subFolder/**/*.cshtml.</param>
+        /// <returns>An <see cref="T:Microsoft.Extensions.Primitives.IChangeToken" /> that is notified when a file matching <paramref name="filter" /> is added, modified or deleted.</returns>
+        public IChangeToken Watch(string filter)
+        {
+            return GetFileProvider(filter, out var outPath).Watch(outPath);
+        }
+
+        #region Neestead class
+
+        private class NopPluginFileProvider : IFileProvider, IDisposable
+        {
+            private readonly PhysicalFileProvider _fileProvider;
+            private readonly List<string> _extensionsBlacklist;
+            private bool _disposed;
+
+            public NopPluginFileProvider(CommonConfig config, INopFileProvider fileProvider)
+            {
+                _fileProvider = new PhysicalFileProvider(fileProvider.MapPath(NopPluginDefaults.PluginPathName));
+                _extensionsBlacklist = [];
+
+                if (!string.IsNullOrEmpty(config.PluginStaticFileExtensionsBlacklist))
+                    _extensionsBlacklist.AddRange(config.PluginStaticFileExtensionsBlacklist
+                        .Split(';', ',')
+                        .Select(e => e.Trim().ToLowerInvariant())
+                        .Select(e => $"{(e.StartsWith(".") ? string.Empty : ".")}{e}"));
+            }
+
+            /// <summary>
+            /// Disposes the provider.
+            /// </summary>
+            /// <param name="disposing"><c>true</c> is invoked from <see cref="IDisposable.Dispose"/>.</param>
+            private void Dispose(bool disposing)
+            {
+                if (_disposed) 
+                    return;
+
+                if (disposing) 
+                    _fileProvider?.Dispose();
+
+                _disposed = true;
+            }
+
+            public IDirectoryContents GetDirectoryContents(string subpath)
+            {
+                return _fileProvider.GetDirectoryContents(subpath);
+            }
+
+            public IFileInfo GetFileInfo(string subpath)
+            {
+                return _extensionsBlacklist.Any(ext => subpath.EndsWith(ext, StringComparison.InvariantCultureIgnoreCase)) ? new NotFoundFileInfo(subpath) : _fileProvider.GetFileInfo(subpath);
+            }
+
+            public IChangeToken Watch(string filter)
+            {
+                return _fileProvider.Watch(filter);
+            }
+
+            /// <summary>
+            /// Disposes the provider. Change tokens may not trigger after the provider is disposed.
+            /// </summary>
+            public void Dispose()
+            {
+                Dispose(true);
+                GC.SuppressFinalize(this);
+            }
+        }
+
+        #endregion
+    }
+
+    #endregion
 }

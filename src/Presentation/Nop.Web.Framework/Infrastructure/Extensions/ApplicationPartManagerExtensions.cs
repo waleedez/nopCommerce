@@ -241,7 +241,7 @@ public static partial class ApplicationPartManagerExtensions
             try
             {
                 //ensure plugins directory is created
-                var pluginsDirectory = _fileProvider.MapPath(NopPluginDefaults.Path);
+                var pluginsDirectory = _fileProvider.MapPath(NopPluginDefaults.PluginsPath);
                 _fileProvider.CreateDirectory(pluginsDirectory);
 
                 //ensure uploaded directory is created

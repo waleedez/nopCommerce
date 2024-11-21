@@ -325,7 +325,7 @@ public partial class PluginService : IPluginService
         var pathBase = _httpContextAccessor.HttpContext.Request.PathBase.Value ?? string.Empty;
         var logoPathUrl = _mediaSettings.UseAbsoluteImagePath ? _webHelper.GetStoreLocation() : $"{pathBase}/";
 
-        var logoUrl = $"{logoPathUrl}{NopPluginDefaults.PathName}/" +
+        var logoUrl = $"{logoPathUrl}{NopPluginDefaults.PluginPathName}/" +
                       $"{_fileProvider.GetDirectoryNameOnly(pluginDirectory)}/{NopPluginDefaults.LogoFileName}.{logoExtension}";
 
         return Task.FromResult(logoUrl);

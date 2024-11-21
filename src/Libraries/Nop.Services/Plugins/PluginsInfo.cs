@@ -115,7 +115,7 @@ public partial class PluginsInfo : IPluginsInfo
             return false;
 
         //directory is directly in plugins directory
-        if (!_fileProvider.GetDirectoryNameOnly(parent).Equals(NopPluginDefaults.PathName, StringComparison.InvariantCultureIgnoreCase))
+        if (!_fileProvider.GetDirectoryNameOnly(parent).Equals(NopPluginDefaults.PluginPathName, StringComparison.InvariantCultureIgnoreCase))
             return false;
 
         return true;
@@ -191,7 +191,7 @@ public partial class PluginsInfo : IPluginsInfo
         var incompatiblePlugins = new Dictionary<string, PluginIncompatibleType>();
 
         //ensure plugins directory is created
-        var pluginsDirectory = _fileProvider.MapPath(NopPluginDefaults.Path);
+        var pluginsDirectory = _fileProvider.MapPath(NopPluginDefaults.PluginsPath);
         _fileProvider.CreateDirectory(pluginsDirectory);
 
         //load plugin descriptors from the plugin directory

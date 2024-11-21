@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Builder;
+﻿using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Nop.Core.Infrastructure;
@@ -31,6 +31,9 @@ public partial class NopStaticFilesStartup : INopStartup
     /// <param name="application">Builder for configuring an application's request pipeline</param>
     public void Configure(IApplicationBuilder application)
     {
+        //use custom web root file provider
+        application.UseNopWebRootFileProvider();
+
         //use response compression before UseNopStaticFiles to support compress for it
         application.UseNopResponseCompression();
 
